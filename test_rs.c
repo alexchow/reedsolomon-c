@@ -137,25 +137,52 @@ void test_inverse(void) {
     }
 }
 
-unsigned char* test_create_random(reed_solomon *rs, int data_size, int block_size) {
+/**
+ * Creates a block of data which contains all the blocks - this includes the data itself (all message blocks)
+ * followed by all the parity blocks. The message portion is filled with random bytes, and the parity portion is zero'd out
+ * 
+ * The memory layout of a single data block is as such:
+ * 
+ * Data shard 1 | Data shard 2 | Data shard 3 | ... | Data shard n
+ * 
+ * The memory layout of a single parity block is as such:
+ * 
+ * Parity shard 1 | Parity shard 3 |  ... |  Parity shard k
+ * 
+ * This is because a (n,k) Block Code has n data shards and k parity shards in each block.
+ * 
+ * The return pointer points to a contigous memory segment with layout:
+ * 
+ * Data block 1 | Data block 2 | ... | Data block k | Parity block 1 | ... | Parity block k
+ * 
+ * Note the abuse of terminology, as in standard "Block Code" terminology, a block contains both the n data shards
+ * as well as the k parity shards, but here we are splitting that block into "Data block" and "Parity block". That is
+ * to say that a "block" usually has its parity shards follow immediately after its data shards (as you would transmit)
+ * over a channel), but in this memory layout here we don't do that.
+ *
+ * Note that the memory layout is precisely that used by "reed_solomon_encode2()", except that that function requires
+ * indices into the individual data/parity subblocks.
+ */
+unsigned char* test_create_random_block(reed_solomon *rs, int data_size, int shard_size) {
     struct timeval tv;
     unsigned char* data;
-    int i, n, seed, nr_blocks;
+    int i, n, seed, nr_shards;
 
     gettimeofday(&tv, 0);
     seed = tv.tv_sec ^ tv.tv_usec;
     srandom(seed);
 
-    nr_blocks = (data_size+block_size-1)/block_size;
-    nr_blocks = ((nr_blocks + rs->data_shards - 1)/ rs->data_shards) * rs->data_shards;
-    n = nr_blocks / rs->data_shards;
-    nr_blocks += n * rs->parity_shards;
+    // nr_shards = nr_data_shards + nr_parity_shards
+    nr_shards = (data_size+shard_size-1)/shard_size;
+    nr_shards = ((nr_shards + rs->data_shards - 1)/ rs->data_shards) * rs->data_shards;
+    n = nr_shards / rs->data_shards;
+    nr_shards += n * rs->parity_shards;
 
-    data = (unsigned char *) malloc(nr_blocks * block_size);
+    data = (unsigned char *) malloc(nr_shards * shard_size);
     for(i = 0; i < data_size; i++) {
         data[i] = (unsigned char)(random() % 255);
     }
-    memset(data + data_size, 0, nr_blocks*block_size - data_size);
+    memset(data + data_size, 0, nr_shards*shard_size - data_size);
 
     return data;
 }
@@ -238,7 +265,7 @@ void test_one_encoding(void) {
     printf("%s:\n", __FUNCTION__);
 
     rs = reed_solomon_new(10, 3);
-    data = test_create_random(rs, data_size, block_size);
+    data = test_create_random_block(rs, data_size, block_size);
     err = test_create_encoding(rs, data, data_size, block_size);
 
     free(data);
@@ -255,7 +282,7 @@ int test_one_decoding_13(int *erases, int erase_count) {
     int err, err2;
 
     rs = reed_solomon_new(10, 3);
-    data = test_create_random(rs, data_size, block_size);
+    data = test_create_random_block(rs, data_size, block_size);
     err = test_create_encoding(rs, data, data_size, block_size);
     assert(0 == err);
 
@@ -404,7 +431,7 @@ int test_one_decoding_13_6(int *erases, int erase_count) {
     int err, err2;
 
     rs = reed_solomon_new(10, 3);
-    data = test_create_random(rs, data_size, block_size);
+    data = test_create_random_block(rs, data_size, block_size);
     err = test_create_encoding(rs, data, data_size, block_size);
     assert(0 == err);
 
@@ -439,7 +466,7 @@ void test_encoding(void) {
     printf("%s:\n", __FUNCTION__);
 
     rs = reed_solomon_new(10, 3);
-    data = test_create_random(rs, data_size, block_size);
+    data = test_create_random_block(rs, data_size, block_size);
     err = test_create_encoding(rs, data, data_size, block_size);
 
     free(data);
@@ -539,7 +566,7 @@ double benchmarkEncodeTest(int n, int dataShards, int parityShards, int shardSiz
     int dataSize = shardSize*dataShards;
     reed_solomon* rs = reed_solomon_new(dataShards, parityShards);
 
-    data = test_create_random(rs, dataSize, shardSize);
+    data = test_create_random_block(rs, dataSize, shardSize);
 
     start = clock();
     for(i = 0; i < n; i++) {

@@ -903,6 +903,14 @@ int reed_solomon_decode(reed_solomon* rs,
  * rs
  * nr_shards: assert(0 == nr_shards % rs->shards)
  * shards[nr_shards][block_size]
+ * 
+ * The buffer layout "shards" is as such:
+ * 
+ * Block 1 data | Block 2 data | Block 3 data | .... | Block 1 parity | Block 2 parity | Block 3 parity ...
+ * 
+ * where each "Block x" is split up into either n shards (for data), or k shards (for parity). Note, each block's
+ * data and parity segments are not adjacent to each other (as you would see in a communication channel). Instead,
+ * all of the data blocks are at the front, and all the parity blocks at the rear.
  * */
 int reed_solomon_encode2(reed_solomon* rs, unsigned char** shards, int nr_shards, int block_size) {
     unsigned char** data_blocks;
